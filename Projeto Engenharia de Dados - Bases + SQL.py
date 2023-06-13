@@ -261,7 +261,7 @@ display(orders2)
 
 # COMMAND ----------
 
-# 2: Duplicando os dados com o novo datraframe orders2 criado, aumentando em 100 linhas duplicadas nosso dataframe original 
+# 2: Duplicando os dados com o novo datraframe orders2 criado, aumentando em 100 linhas duplicadas no dataframe original 
 
 orders2.write.format("delta").mode("append").saveAsTable("bronze.orders")
 
@@ -296,7 +296,7 @@ orders2.write.format("delta").mode("append").saveAsTable("bronze.orders")
 
 # MAGIC %sql
 # MAGIC
-# MAGIC -- 6: Criando um Select Distinct para trazer informações sem dados duplicados
+# MAGIC -- 6: Criando um Select Distinct para trazer informações sem os dados duplicados
 # MAGIC
 # MAGIC
 # MAGIC SELECT DISTINCT(*) FROM bronze.orders; -- 6.683 Dados sem duplicação 
