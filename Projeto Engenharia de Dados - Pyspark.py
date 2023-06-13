@@ -291,4 +291,228 @@ df_orders = spark.sql(SELECT DISTINCT(*) FROM bronze.orders)
 
 # COMMAND ----------
 
+# Importando as bibliotcas
 
+# pyspark.sql.types (Importar todos os tipos de dados do pyspark-sql)
+
+# Funções Replace Pyspark: https://sparkbyexamples.com/pyspark/pyspark-replace-column-values/
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import *  
+
+# COMMAND ----------
+
+df_orders = spark.sql("SELECT * FROM bronze.orders")
+df_orders.display()
+
+# COMMAND ----------
+
+df_orders[['order_amount', 'order_moment_created']] \
+    .withColumn('order_amount', F.col('order_amount').cast(DoubleType())) \
+    .withColumn('order_moment_created', F.to_date(F.regexp_replace(F.substring(F.col('order_moment_created'), 1, 9), ' ', ''), 'M/d/yyyy')) \
+.display()
+
+# COMMAND ----------
+
+'''
+
+USANDO SQL:
+
+Exemplo 0:
+
+SELECT
+  CAST(order_amount AS FLOAT) AS order_amount,
+  TO_DATE(REPLACE(SUBSTRING(order_moment_created, 1, 9), " ", ""), "M/d/yyyy") AS order_moment_created
+FROM bronze.orders;
+
+
+Exemplo 1:
+
+SELECT
+  CAST(order_amount AS FLOAT) AS order_amount,
+  order_moment_created,
+  TO_DATE(REPLACE(SUBSTRING(order_moment_created, 1, 9), " ", ""), "M/d/yyyy") AS order_moment_created_formated
+FROM bronze.orders;
+
+
+Exemplo 2:
+
+SELECT
+  CAST(order_amount AS FLOAT) AS order_amount,
+  order_moment_created,
+  TO_DATE(REPLACE(SUBSTRING(order_moment_created, 1, 9), " ", ""), "M/d/yyyy") AS order_moment_created_formated
+FROM bronze.orders
+WHERE
+  order_created_day > 10
+AND
+  order_created_month > 2;
+
+
+
+'''
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC ## 9 - Detectando Anomalias
+
+# COMMAND ----------
+
+# 1 - Importar bibliotecas
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+
+# COMMAND ----------
+
+# 2 - Ver o dataframe completo
+
+df_orders = spark.sql("SELECT * FROM bronze.orders")
+df_orders.display()
+
+# COMMAND ----------
+
+# 3 - Fazer o casting na coluna desejada
+
+df_orders = df_orders.withColumn('order_amount', F.col('order_amount').cast(DoubleType()))
+
+# COMMAND ----------
+
+# 4 - Verificando o tipos de dados das colunas com o 'printSchema()'
+
+df_orders.printSchema()
+
+# COMMAND ----------
+
+# 5 - Verifcando os dados da coluna --> df[['name_column']]
+
+display(df_orders[['order_amount']])
+
+# COMMAND ----------
+
+# 6 - Usando a função describe para verificar e detectar as anomalias 
+
+# OBS: O describe() é parecido ao usar no SQL o ntitle
+
+
+df_orders.describe().display()
+
+# COMMAND ----------
+
+'''
+
+SQL ntitle() vs Pandas describe()
+
+SELECT
+  a.ntile,
+  min(order_amount) as limite_inferior,
+  max(order_amount) as limite_superior,
+  avg(order_amount) as media,
+  count(order_id) as orders
+FROM
+  (
+    SELECT order_id, CAST(order_amount as FLOAT),
+    ntile(4) OVER (ORDER BY CAST(order_amount as FLOAT)) as ntile
+    FROM bronze.orders
+  ) a
+GROUP BY 1;
+
+
+'''
+
+# COMMAND ----------
+
+# 7 - Verificando order_amount < 10000
+
+# Ajuda a verificar esta anomalia para fazer o tratamento posterior
+
+df_orders.filter(F.col('order_amount') < 10000).display()
+
+
+# COMMAND ----------
+
+# Importar bibliotecas
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+
+# COMMAND ----------
+
+# Função distinct()
+
+# Verificar quais são os channel_id (Valores únicos) - 39 linhas
+
+df_orders[['channel_id']].distinct().display()
+
+# COMMAND ----------
+
+# Função isin()
+
+# 1, 10 e 11 --> São os 3 primeiros channel_id
+
+# SQL = IN
+
+# PANDAS = isin
+
+df_orders_filter = df_orders[['order_id', 'store_id', 'order_amount', 'channel_id']].filter((F.col('channel_id').isin(['1', '10', '11']))).display()
+
+
+
+# COMMAND ----------
+
+# Fuções when() + otherwise()
+
+# F.when() --> Deve ser utilizada apenas uma vez, após isso apenas .when() e .otherwise(), pois ele traz a 'F.' internamente 
+
+# channel_name --> Nova coluna criada 
+
+df_orders_filter \
+    .withColumn('channel_name', F.when(F.col('channel_id') == '1', 'APP')
+                .when(F.col('channel_id') == '10', 'SITE') \
+                .otherwise('MARKET PLACE')
+               ) \
+.display()
+
+# COMMAND ----------
+
+# Juntando filter() + withColumn() + when() + otherwise()
+
+
+
+df_all = df_orders[['order_id', 'store_id', 'order_amount', 'channel_id']].filter((F.col('channel_id').isin(['1', '10', '11'])))\
+    .withColumn('channel_name', F.when(F.col('channel_id') == '1', 'APP')\
+    .when(F.col('channel_id') == '10', 'SITE')\
+    .otherwise('MARKET PLACE'))\
+.display()
+
+
+# COMMAND ----------
+
+'''
+
+USANDO SQL:
+
+
+SELECT DISTINCT(channel_id) FROM bronze.orders;
+
+
+SELECT
+  order_id,
+  store_id,
+  order_amount,
+  (
+    CASE
+      WHEN channel_id = "1" THEN "APP"
+      WHEN channel_id = "10" THEN "SITE"
+      ELSE "MARKET PLACE"
+    END
+  ) as channel
+FROM
+  bronze.orders
+WHERE
+  channel_id IN ("1", "10", "11");
+
+
+
+'''
