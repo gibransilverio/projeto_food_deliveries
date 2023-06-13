@@ -196,4 +196,99 @@ df_orders[['order_id', 'store_id', 'order_delivery_fee', 'order_delivery_cost']]
 
 # COMMAND ----------
 
+# Agregações exemplo 1 (withColumnRenamed) --> https://sparkbyexamples.com/pyspark/pyspark-groupby-agg-aggregate-explained/
+
+# df_orders.groupBy(['store_id']) or df_orders.groupBy('store_id')
+
+# {'chave':'valor'} = {'coluna':'função_agregação'}
+
+df_orders.groupBy(['store_id'])\
+    .agg({'order_amount':'sum'})\
+    .withColumnRenamed('sum(order_amount)', 'total').display()  # Se não renomear o nome da coluna fica sum(order_amount)
+
+# COMMAND ----------
+
+# Agregações exemplo 2 (F.function_aggregation().alias())  --> from pyspark.sql import functions as F
+
+df_orders.groupBy('store_id')\
+    .agg(F.sum('order_amount').alias('total')).display()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC ## 7 - Tratamento de Dados Duplicados
+
+# COMMAND ----------
+
+df_orders = spark.sql("SELECT * FROM bronze.orders")
+df_orders.display()
+
+# COMMAND ----------
+
+# Tem de passar o dataframe novamente para que ele agora receba a deleção dos dados duplicados
+
+# Coalesce faz a junção das partições em somente 1 para otmização de deletar os dados duplicados
+
+# https://www.geeksforgeeks.org/python-pandas-dataframe-drop_duplicates/
+
+# OBS PANDAS: Temos a opção de selecionar as colunas que queremos deletar dados duplicados com 'subset' --> df.drop_duplicates(subset="name_column")
+
+# Pyspark: dropDuplicates(['order_id','store_id'])
+
+df_orders = df_orders.coalesce(1).dropDuplicates()
+
+# COMMAND ----------
+
+'''
+
+EXEMPLO SQL + PYSPARK:
+
+
+1: Criando um novo dataframe atavés de um Select no Spark/Pyspark
+
+orders2 = spark.sql("SELECT * FROM bronze.orders LIMIT 100")
+display(orders2)
+
+
+2: Duplicando os dados com o novo datraframe orders2 criado, aumentando em 100 linhas duplicadas no dataframe original 
+
+orders2.write.format("delta").mode("append").saveAsTable("bronze.orders")
+
+
+
+3: Verificar quais são as order_id duplicadas
+
+
+SELECT order_id, store_id, order_amount, COUNT(*) as qtd_registros_duplicados FROM bronze.orders GROUP BY order_id, store_id, order_amount;
+
+
+
+4: Verificar a quantidade de linhas duplicadas de order_id (SUBQUERIES - SUBSELECT)
+
+SELECT COUNT(*) AS Total_Duplicados
+FROM(SELECT order_id, store_id, order_amount, COUNT(*) as qtd_registros_duplicados FROM bronze.orders GROUP BY order_id, store_id, order_amount) a
+WHERE a.qtd_registros_duplicados > 1;
+
+
+
+
+5: Criando um dataframe através do 'SELECT DISTINCT(*)' para trazer informações sem  os dados duplicados
+
+
+df_orders = spark.sql(SELECT DISTINCT(*) FROM bronze.orders) 
+
+
+
+
+'''
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC ## 8 - Casting
+
+# COMMAND ----------
+
 
