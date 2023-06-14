@@ -507,8 +507,8 @@ SELECT
       WHEN channel_id = "10" THEN "SITE"
       ELSE "MARKET PLACE"
     END
-  ) as channel
-FROM
+  ) as channel_name
+  FROM
   bronze.orders
 WHERE
   channel_id IN ("1", "10", "11");
@@ -516,3 +516,242 @@ WHERE
 
 
 '''
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC ## 10 - Tratando Dados Ausentes 
+
+# COMMAND ----------
+
+# Importando bibliotecas
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+
+# COMMAND ----------
+
+# Verificando as colunas da tabela 'bronze.orders'
+
+df_orders = spark.sql("SELECT * FROM bronze.orders")
+
+df_orders.display()
+
+# COMMAND ----------
+
+# Alterando o tipo de dados da coluna 'order_delivery_cost'
+
+df_order_filter = df_orders[['order_id', 'order_delivery_cost']].withColumn('order_delivery_cost',F.col('order_delivery_cost').cast(DoubleType()))
+
+df_order_filter.display()
+
+# COMMAND ----------
+
+# Agrupando os dados da coluna 'order_delivery_cost' para tratar posteriormente os dados null
+
+# Agregando e Agrupando pela média dos valores da coluna 'order_delivery_cost'
+
+
+df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).display()
+
+# COMMAND ----------
+
+# Função collect()
+
+# Usado após filter() e groupBy()
+
+# Usando collect para pegar o valor agregado da média para gravar em uma variavel posterior
+
+# https://sparkbyexamples.com/pyspark/pyspark-collect/
+
+df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect() # Out: [Row(avg(order_delivery_cost)=7.285979661485239)]
+
+# COMMAND ----------
+
+# OBS: collect()[linha][coluna]
+
+# OBS: O nome da coluna é avg(order_delivery_cost) não mean()
+
+df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)'] # Out: 7.285979661485239
+
+# COMMAND ----------
+
+# Colocando dentro de uma variavel
+
+# Fazendo processo arredondamento --> round() PYTHON
+
+'''
+
+ROUND PYSPARK:
+
+Se a escala for positiva, como scale=2, os valores serão arredondados para o segundo decimal mais próximo. 
+Se a escala for negativa, como scale=-1, os valores serão arredondados para o décimo mais próximo. 
+Por padrão, scale=0, ou seja, os valores são arredondados para o inteiro mais próximo.
+
+https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.round.html#pyspark.sql.functions.round
+
+https://www.skytowner.com/explore/pyspark_sql_functions_round_method
+
+
+ROUND PYTHON:
+
+round(number, digits)
+
+Por padrão, digits=0
+
+'''
+
+mean_order_delivery_cost = df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)']
+mean_order_delivery_cost = round(mean_order_delivery_cost, 2)
+mean_order_delivery_cost # Out: 7.29
+
+# COMMAND ----------
+
+# Usando when() + otherwise() + isNull() + lit()
+
+# lit() Atribuir um valor literal ou constante
+ 
+# https://sparkbyexamples.com/pyspark/pyspark-lit-add-literal-constant/
+
+
+df_order_filter.withColumn('order_delivery_cost', F.when(F.col('order_delivery_cost').isNull(), F.lit(mean_order_delivery_cost))\
+    .otherwise(F.col('order_delivery_cost'))).display()
+
+# COMMAND ----------
+
+'''
+
+SQL VS PYSPARK:
+
+sql
+
+%sql
+
+-- Alterando valores nulos com Tendência Central
+-- Podemos usar uma tendência central, como Media (Menos robusta para Anomalias), Mediana (Mais robusta para Anomalias), Moda 
+-- ROUND(number, decimals, operation)
+
+
+SELECT
+  order_id,
+  (
+    CASE
+      WHEN 
+        order_delivery_cost IS NULL THEN ROUND((SELECT MEDIAN(CAST(order_delivery_cost AS FLOAT)) FROM bronze.orders),2)
+      ELSE order_delivery_cost
+    END
+  ) AS order_delivery_cost
+FROM
+  bronze.orders
+LIMIT 5;
+
+
+SELECT
+  order_id,
+  order_amount,
+  (
+    CASE
+      WHEN 
+        order_delivery_cost IS NULL AND order_amount > 0 THEN ROUND((SELECT MEDIAN(CAST(order_delivery_cost AS FLOAT)) FROM bronze.orders),2)
+      ELSE order_delivery_cost
+    END
+  ) AS order_delivery_cost
+FROM
+  bronze.orders
+LIMIT 5;
+
+
+
+PYSPARK:
+
+mean_order_delivery_cost = df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)']
+mean_order_delivery_cost = round(mean_order_delivery_cost, 2)
+mean_order_delivery_cost # Out: 7.29
+
+
+
+
+df_order_filter.withColumn('order_delivery_cost', F.when(F.col('order_delivery_cost').isNull(), F.lit(mean_order_delivery_cost))\
+    .otherwise(F.col('order_delivery_cost'))).display()
+
+
+'''
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC ## 11 - Criando Tabela Final Tratada
+
+# COMMAND ----------
+
+from pyspark.sql import functions as F
+from pyspark.sql.types import *
+
+# COMMAND ----------
+
+df_orders = spark.sql("SELECT * FROM bronze.orders")
+df_orders.display()
+
+# COMMAND ----------
+
+df_orders_estrutura = df_orders[['order_id', 'store_id', 'order_amount', 'order_moment_created']] \
+    .withColumn('order_id', F.col('order_id').cast(IntegerType())) \
+    .withColumn('store_id', F.col('store_id').cast(IntegerType())) \
+    .withColumn('order_amount', F.col('order_amount').cast(DoubleType())) \
+    .withColumn('order_moment_created', F.to_date(F.regexp_replace(F.substring(F.col('order_moment_created'), 1, 9), ' ', ''), 'M/d/yyyy'))
+
+# COMMAND ----------
+
+# isNull() x isNotNull() == ~isNull() --> PYSPARK
+
+# isin() x ~isin() == Not isin() --> PYSPARK
+
+# is null x is not null --> SQL
+  
+
+df_orders_filter = df_orders_estrutura.filter(
+    (F.col('order_amount') < 10000) &
+    (~F.col('order_moment_created').isNull())
+)
+
+# COMMAND ----------
+
+df_orders_filter = df_orders_filter.coalesce(1).dropDuplicates()
+df_orders_filter.display()
+
+# COMMAND ----------
+
+df_stores = spark.sql("SELECT store_id, store_name FROM bronze.stores")
+df_stores.display()
+
+# COMMAND ----------
+
+df_stores_estrura = df_stores.withColumn('store_id', F.col('store_id').cast(IntegerType()))
+
+# COMMAND ----------
+
+df_stores_estrura = df_stores_estrura.coalesce(1).dropDuplicates()
+
+# COMMAND ----------
+
+df_orders_stores = df_orders_filter.join(df_stores_estrura, on=['store_id'], how='inner')
+
+# COMMAND ----------
+
+df_orders_stores_total_amount = df_orders_stores \
+    .groupBy(['order_moment_created', 'store_id', 'store_name']) \
+    .agg({'order_amount':'sum'}) \
+    .withColumnRenamed('sum(order_amount)', 'total_amount')
+
+# COMMAND ----------
+
+df_orders_stores_total_amount.write \
+    .mode('overwrite') \
+    .saveAsTable('prata.orders_store_total_amount')
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT * FROM prata.orders_store_total_amount
