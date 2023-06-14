@@ -542,9 +542,9 @@ df_orders.display()
 
 # Alterando o tipo de dados da coluna 'order_delivery_cost'
 
-df_order_filter = df_orders[['order_id', 'order_delivery_cost']].withColumn('order_delivery_cost',F.col('order_delivery_cost').cast(DoubleType()))
+df_orders_filter = df_orders[['order_id', 'order_delivery_cost']].withColumn('order_delivery_cost',F.col('order_delivery_cost').cast(DoubleType()))
 
-df_order_filter.display()
+df_orders_filter.display()
 
 # COMMAND ----------
 
@@ -553,7 +553,7 @@ df_order_filter.display()
 # Agregando e Agrupando pela média dos valores da coluna 'order_delivery_cost'
 
 
-df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).display()
+df_orders_filter.groupBy().agg({'order_delivery_cost':'mean'}).display()
 
 # COMMAND ----------
 
@@ -565,7 +565,7 @@ df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).display()
 
 # https://sparkbyexamples.com/pyspark/pyspark-collect/
 
-df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect() # Out: [Row(avg(order_delivery_cost)=7.285979661485239)]
+df_orders_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect() # Out: [Row(avg(order_delivery_cost)=7.285979661485239)]
 
 # COMMAND ----------
 
@@ -573,7 +573,7 @@ df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect() # Out: [
 
 # OBS: O nome da coluna é avg(order_delivery_cost) não mean()
 
-df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)'] # Out: 7.285979661485239
+df_orders_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)'] # Out: 7.285979661485239
 
 # COMMAND ----------
 
@@ -602,7 +602,7 @@ Por padrão, digits=0
 
 '''
 
-mean_order_delivery_cost = df_order_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)']
+mean_order_delivery_cost = df_orders_filter.groupBy().agg({'order_delivery_cost':'mean'}).collect()[0]['avg(order_delivery_cost)']
 mean_order_delivery_cost = round(mean_order_delivery_cost, 2)
 mean_order_delivery_cost # Out: 7.29
 
@@ -615,7 +615,7 @@ mean_order_delivery_cost # Out: 7.29
 # https://sparkbyexamples.com/pyspark/pyspark-lit-add-literal-constant/
 
 
-df_order_filter.withColumn('order_delivery_cost', F.when(F.col('order_delivery_cost').isNull(), F.lit(mean_order_delivery_cost))\
+df_orders_filter.withColumn('order_delivery_cost', F.when(F.col('order_delivery_cost').isNull(), F.lit(mean_order_delivery_cost))\
     .otherwise(F.col('order_delivery_cost'))).display()
 
 # COMMAND ----------
@@ -710,6 +710,7 @@ df_orders_estrutura = df_orders[['order_id', 'store_id', 'order_amount', 'order_
 
 # is null x is not null --> SQL
   
+# OBS: ~ --> É negação
 
 df_orders_filter = df_orders_estrutura.filter(
     (F.col('order_amount') < 10000) &
@@ -718,34 +719,64 @@ df_orders_filter = df_orders_estrutura.filter(
 
 # COMMAND ----------
 
+# Deletar dados duplicados coalesce(1) + dropDuplicates()
+
 df_orders_filter = df_orders_filter.coalesce(1).dropDuplicates()
 df_orders_filter.display()
 
 # COMMAND ----------
+
+# Ver quantidade de linhas 
+
+display(df_orders_filter.count())
+
+# COMMAND ----------
+
+# Criando um dataframe através da tabela bronze.stores
 
 df_stores = spark.sql("SELECT store_id, store_name FROM bronze.stores")
 df_stores.display()
 
 # COMMAND ----------
 
+# Tratado 'store_id' da tabela 'bronze.store' que agora está dentro de um dataframe 'df_stores'
+
 df_stores_estrura = df_stores.withColumn('store_id', F.col('store_id').cast(IntegerType()))
 
 # COMMAND ----------
+
+# Deletando dados duplicados
 
 df_stores_estrura = df_stores_estrura.coalesce(1).dropDuplicates()
 
 # COMMAND ----------
 
+# Juntando os dataframes 'df_orders_filter' + 'df_stores_estrutura'
+
+# OBS: Para fazer join as colunas tem de ser do mesmo tipo de dado
+
+# Coluna de conexão é 'stored_id' (Foreignkey )
+
 df_orders_stores = df_orders_filter.join(df_stores_estrura, on=['store_id'], how='inner')
 
 # COMMAND ----------
 
+# Agrupando e Agregando (Função sum (soma)) para criar um novo datrafame 
+
+# Novo 'df_orders_stores_total_amount' tratado, agrupado e agregado que será de base para a criação de uma nova tabela trata 
+
+# IMPORTANTE: O order_id não é passado no groupBy() devido ao fato que ele faz uma união a nível de linha e assim não trara os dados corretamente que queremos
+
 df_orders_stores_total_amount = df_orders_stores \
-    .groupBy(['order_moment_created', 'store_id', 'store_name']) \
+    .groupBy(['order_moment_created', 'store_id', 'store_name'])\
     .agg({'order_amount':'sum'}) \
     .withColumnRenamed('sum(order_amount)', 'total_amount')
 
 # COMMAND ----------
+
+# Criando a tabela tratada no diretório 'prata'
+
+# OBS: Depdende de como for trabalhar no dia-a-dia podemos usar também as opções option("mergeSchema", "true"), mode('append)
 
 df_orders_stores_total_amount.write \
     .mode('overwrite') \
@@ -754,4 +785,21 @@ df_orders_stores_total_amount.write \
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT * FROM prata.orders_store_total_amount
+# MAGIC
+# MAGIC -- Fazendo select na nova trabela tratada 'orders_store_total_amount' na base de dados prata
+# MAGIC
+# MAGIC SELECT * FROM prata.orders_store_total_amount;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC
+# MAGIC SELECT COUNT(*) FROM prata.orders_store_total_amount;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC
+# MAGIC -- Exemplo de como dropar tabela 
+# MAGIC
+# MAGIC -- DROP TABLE prata.orders_store_total_amount;
