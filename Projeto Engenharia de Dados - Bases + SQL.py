@@ -91,6 +91,10 @@ df2 = pd.read_csv("/dbfs/FileStore/shared_uploads/1486559@sga.pucminas.br/orders
 
 # Orders
 
+# .option("delimiter", ";").option("header", True)
+
+
+
 df_orders = spark.read.format("csv").option("header", "true").load("dbfs:/FileStore/shared_uploads/1486559@sga.pucminas.br/orders.csv")
 
 df_stores = spark.read.format("csv").option("header", "true").load("dbfs:/FileStore/shared_uploads/1486559@sga.pucminas.br/stores.csv")
@@ -104,7 +108,9 @@ df_stores = spark.read.format("csv").option("header", "true").load("dbfs:/FileSt
 
 # COMMAND ----------
 
-df_orders.write.format("delta").mode("overwrite").saveAsTable("bronze.orders")
+# df.write.format("delta").save("/caminho") --> Salvar em arquivo delta
+
+df_orders.write.format("delta").mode("overwrite").saveAsTable("bronze.orders")  # Salvando como tabela
 
 df_stores.write.format("delta").mode("overwrite").saveAsTable("bronze.stores")
 
